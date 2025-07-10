@@ -1,11 +1,5 @@
 # Business Transaction Processing System
 
-## What This System Does (For Everyone)
-
-Imagine you run a service-based business where employees provide services to customers and also sell products. Every day, you receive transaction data from your payment processor - but it's messy, incomplete, and doesn't tell you the business insights you need.
-
-**This system automatically transforms that raw transaction data into actionable business intelligence.**
-
 Here's what happens in simple terms:
 
 1. **Raw transaction data comes in** - timestamps, payment IDs, amounts, customer names, but the details are all jumbled together in confusing formats
@@ -16,8 +10,6 @@ Here's what happens in simple terms:
    - How much the business kept after paying commissions and fees
    - Tips, taxes, discounts, and other financial details
    - Customer information for relationship tracking
-
-**The result:** Instead of spending hours manually calculating commissions and business metrics, business owners get automated reports that show exactly how their business is performing and how much each team member should be paid.
 
 ---
 
