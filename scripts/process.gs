@@ -1,15 +1,15 @@
 /**
- * Processes transactions from "Raw Transactions" and appends new entries to the "Processed Transactions" sheet.
- * Handles commission calculations, product sales, and business metrics.
+ * Combined function that processes data directly from "Raw" to "Processed" 
+ * Eliminates the need for the intermediate "Pre-processed" sheet
  */
-function processBusinessTransactions() {
+function processDataComplete() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   // Sheet names
-  const rawSheetName = 'Raw Transactions';
-  const processedSheetName = 'Processed Transactions';
+  const rawSheetName = 'Raw';
+  const processedSheetName = 'Processed';
   const commissionSheetName = 'Commission Rates';
-  const menuSheetName = 'Service Menu';
+  const menuSheetName = 'Menu of Services';
   
   // Get sheets
   const rawSheet = ss.getSheetByName(rawSheetName);
@@ -23,12 +23,24 @@ function processBusinessTransactions() {
   if (!commissionSheet) throw new Error(`Sheet named '${commissionSheetName}' not found.`);
   if (!menuSheet) throw new Error(`Sheet named '${menuSheetName}' not found.`);
   
-  // Define headers for "Processed Transactions"
+  // === Step 1: Get and Clean Raw Data ===
+  let rawData = rawSheet.getDataRange().getValues();
+  
+  // Check if there are at least two rows to remove (assuming two header rows in "Raw")
+  if (rawData.length < 3) {
+    Logger.log("Not enough data in 'Raw' sheet.");
+    return;
+  }
+  
+  // Remove the first two rows (headers in Raw)
+  rawData.splice(0, 2);
+  
+  // === Step 2: Define Headers for "Processed" ===
   const headers = [
-    'Transaction ID',          // A
-    'Date & Time',             // B
+    'PaymentID',               // A
+    'Time & Date',             // B
     'Service Type',            // C
-    'Staff Member',            // D
+    'Staff Name',              // D
     'Additional Fees',         // E
     'Amount Paid',             // F
     'Processing Fee',          // G
@@ -45,41 +57,33 @@ function processBusinessTransactions() {
     'Discounts',               // R
     'Other Adjustments',       // S
     'Total Staff Commission',  // T
-    'Net Business Revenue',    // U
+    'Net Business Take',       // U
     'Status',                  // V
-    'Customer Name'            // W
+    'Customer'                 // W
   ];
   
-  // Check if "Processed Transactions" has headers; if not, set them
+  // === Step 3: Check if "Processed" has headers; if not, set them ===
   let processedLastRow = processedSheet.getLastRow();
   if (processedLastRow === 0) {
     processedSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    Logger.log('Headers set in "Processed Transactions" sheet.');
+    Logger.log('Headers set in "Processed" sheet.');
     processedLastRow = 1; 
   }
   
-  // Get existing Transaction IDs from "Processed Transactions" to avoid duplicates
-  let existingTransactionIDs = new Set();
+  // === Step 4: Get existing PaymentIDs from "Processed" to avoid duplicates ===
+  let existingPaymentIDs = new Set();
   if (processedLastRow >= 2) {
     const existingDataRange = processedSheet.getRange(2, 1, processedLastRow - 1, 1); // Col A
     const existingData = existingDataRange.getValues();
     existingData.forEach(row => {
-      const transactionID = row[0];
-      if (transactionID) {
-        existingTransactionIDs.add(transactionID.toString().trim());
+      const paymentID = row[0];
+      if (paymentID) {
+        existingPaymentIDs.add(paymentID.toString().trim());
       }
     });
   }
   
-  // Get raw transaction data, starting from row 2
-  const rawLastRow = rawSheet.getLastRow();
-  const rawLastColumn = rawSheet.getLastColumn();
-  if (rawLastRow < 2) {
-    Logger.log(`No data found in '${rawSheetName}' starting from row 2.`);
-    return;
-  }
-  const rawDataRange = rawSheet.getRange(2, 1, rawLastRow - 1, rawLastColumn);
-  const rawData = rawDataRange.getValues();
+  // === Step 5: Load Commission and Menu Data ===
   
   // Retrieve commission data from "Commission Rates" (Columns A:C)
   const commissionLastRow = commissionSheet.getLastRow();
@@ -103,7 +107,7 @@ function processBusinessTransactions() {
     }
   });
   
-  // Build a menu map from "Service Menu": { 'Item Name': Price }
+  // Build a menu map from "Menu of Services": { 'Item Name': Price }
   const menuLastRow = menuSheet.getLastRow();
   const menuDataRange = menuSheet.getRange(2, 1, menuLastRow - 1, 2);
   const menuData = menuDataRange.getValues();
@@ -116,42 +120,53 @@ function processBusinessTransactions() {
     }
   });
   
-  // Define business owners, who get different product commission rates
-  const businessOwners = ['Manager A', 'Manager B'];
+  // Define owners/managers who get different product commission rates
+  const owners = ['Owner1', 'Owner2']; // Placeholder names for business owners
   
-  // We'll accumulate rows to append to "Processed Transactions"
+  // We'll accumulate rows to append to "Processed"
   const processedData = [];
   
-  // === Process each row from "Raw Transactions" ===
+  // === Step 6: Process each row from Raw data ===
   rawData.forEach((row, rowIndex) => {
-    // Map raw data columns to variables
-    const date = row[0];                // col A
-    const transactionID = row[1];       // col B
-    const amountPaidRaw = row[3];       // col D
-    const processingFeeRaw = row[5];    // col F
-    const statusRaw = row[9];           // col J
-    const customerName = row[10];       // col K
-    const serviceDescription = row[12]; // col M -> "Service Description"
-    const quantityRaw = row[13];        // col N -> "Quantity"
-    const discountRaw = row[14];        // col O -> "Discount"
-    const productTaxRaw = row[16];      // col Q -> "Tax"
+    // Map Raw data fields (accounting for the shifted columns due to new Transaction Date column)
+    const date = row[0];                    // Time & Date (A)
+    const paymentID = row[1];               // Provider Payment ID (B)
+    const currency = row[3];                // Currency (D) - shifted from C
+    const amountPaidRaw = row[4];           // Amount (E) - shifted from D
+    const processingFeeRaw = row[5];        // Processing Fee (F) - shifted from E
+    const commission = parseFloat(row[6]) || 0; // Commission (G) - shifted from F
+    const net = row[7];                     // Net (H) - shifted from G
+    const statusRaw = row[8];               // Status (I) - shifted from H
+    
+    // Customer name: concatenate first name (Q) and last name (R) - shifted from P,Q
+    const firstName = row[16] || '';
+    const lastName = row[17] || '';
+    const customerName = (firstName + " " + lastName).trim();
+    
+    // Order details - all shifted by 1 due to new Transaction Date column
+    const orderID = row[44];                // Order ID (AS) - shifted from AR
+    const name = row[45];                   // Name (AT) - shifted from AS
+    const quantityRaw = row[46];            // Quantity (AU) - shifted from AT
+    const discountRaw = row[47];            // Discount (AV) - shifted from AU
+    const shipping = row[48];               // Shipping (AW) - shifted from AV
+    const productTaxRaw = row[49];          // Tax (AX) - shifted from AW
     
     // Skip rows missing key fields
-    if (!serviceDescription || !date || !transactionID) return;
+    if (!name || !date || !paymentID) return;
     
-    const trimmedTransactionID = transactionID.toString().trim();
-    if (existingTransactionIDs.has(trimmedTransactionID)) {
+    const trimmedPaymentID = paymentID.toString().trim();
+    if (existingPaymentIDs.has(trimmedPaymentID)) {
       // Already processed, skip
       return;
     }
     
-    // Parse the service description field for staff, service type, products, etc.
-    const parsedService = parseServiceDescription(serviceDescription, quantityRaw);
-    let staffName = parsedService.staffName;
-    let serviceType = parsedService.serviceType;
-    const products = parsedService.products;
-    const additionalFees = parsedService.additionalFees;
-    const nonProductCount = parsedService.nonProductCount;
+    // === Step 7: Parse the "Name" field for staff, service type, products, etc. ===
+    const parsedName = parseNameField(name, quantityRaw);
+    let staffName = parsedName.staffName;
+    let serviceType = parsedName.serviceType;
+    const products = parsedName.products;
+    const additionalFees = parsedName.additionalFees;
+    const nonProductCount = parsedName.nonProductCount;
     
     // Clean up staff/service strings
     staffName = staffName.trim();
@@ -162,6 +177,8 @@ function processBusinessTransactions() {
     if (isNaN(actualProductQuantity) || actualProductQuantity < 1) {
       actualProductQuantity = 1; // fallback
     }
+    
+    // === Step 8: Calculate Financial Details ===
     
     // Parse numeric fields
     let amountPaid = parseFloat(amountPaidRaw) || 0;
@@ -225,7 +242,7 @@ function processBusinessTransactions() {
       });
       
       // Product commission rate
-      if (businessOwners.includes(staffName)) {
+      if (owners.includes(staffName)) {
         productCommissionRate = 0; 
       } else {
         productCommissionRate = commissionRates.productRate;
@@ -249,8 +266,8 @@ function processBusinessTransactions() {
     // Total staff commission
     let totalStaffCommission = staffServiceCommission + productCommission - staffProcessingFee + otherAdjustments + tips;
     
-    // Net business revenue
-    let netBusinessRevenue = amountPaid - totalStaffCommission - businessProcessingFee - productTax;
+    // Net business take
+    let netBusinessTake = amountPaid - totalStaffCommission - businessProcessingFee - productTax;
     
     // If refunded/voided, zero out currency fields
     if (isRefundedOrVoided) {
@@ -267,18 +284,18 @@ function processBusinessTransactions() {
       discounts = 0;
       otherAdjustments = 0;
       totalStaffCommission = 0;
-      netBusinessRevenue = 0;
+      netBusinessTake = 0;
     }
     
     // Round function
     const roundToTwo = num => Math.round(num * 100) / 100;
     
-    // Append a row to processedData
+    // === Step 9: Build the final row ===
     processedData.push([
-      trimmedTransactionID,                       // A: Transaction ID
-      date,                                       // B: Date & Time
+      trimmedPaymentID,                           // A: PaymentID
+      date,                                       // B: Time & Date
       serviceType,                                // C: Service Type
-      staffName,                                  // D: Staff Member
+      staffName,                                  // D: Staff Name
       additionalFees,                             // E: Additional Fees
       roundToTwo(amountPaid),                     // F: Amount Paid
       roundToTwo(processingFee),                  // G: Processing Fee
@@ -295,69 +312,71 @@ function processBusinessTransactions() {
       roundToTwo(discounts),                      // R: Discounts
       roundToTwo(otherAdjustments),               // S: Other Adjustments
       roundToTwo(totalStaffCommission),           // T: Total Staff Commission
-      roundToTwo(netBusinessRevenue),             // U: Net Business Revenue
+      roundToTwo(netBusinessTake),                // U: Net Business Take
       statusRaw,                                  // V: Status
-      customerName                                // W: Customer Name
+      customerName                                // W: Customer
     ]);
     
-    Logger.log(`Processed Transaction ID: ${trimmedTransactionID}, Staff: ${staffName}, Customer: ${customerName}`);
+    Logger.log(`Processed PaymentID: ${trimmedPaymentID}, Staff: ${staffName}, Customer: ${customerName}`);
   });
   
-  // === Append processedData to "Processed Transactions" sheet ===
+  // === Step 10: Append processedData to "Processed" sheet ===
   if (processedData.length > 0) {
     const appendStartRow = processedLastRow + 1;
     processedSheet
       .getRange(appendStartRow, 1, processedData.length, headers.length)
       .setValues(processedData);
-    Logger.log(`Appended ${processedData.length} new transactions to "Processed Transactions".`);
+    Logger.log(`Appended ${processedData.length} new transactions to "Processed".`);
   } else {
     Logger.log(`No new transactions to process.`);
   }
 
-  // === Sort "Processed Transactions" sheet by "Date & Time" (column B) descending ===
+  // === Step 11: Sort "Processed" sheet by "Time & Date" (column B) descending ===
   const totalRows = processedSheet.getLastRow();
   if (totalRows > 1) {
     processedSheet
       .getRange(2, 1, totalRows - 1, headers.length)
       .sort({column: 2, ascending: false});
-    Logger.log(`Sorted "Processed Transactions" sheet by "Date & Time" descending.`);
+    Logger.log(`Sorted "Processed" sheet by "Time & Date" descending.`);
   }
 
-  // === Reapply Formatting ===
-  applyBusinessFormatting(processedSheet, headers.length);
+  // === Step 12: Reapply Formatting ===
+  applyFormatting(processedSheet, headers.length);
   
-  // === Remove Duplicate Transaction IDs ===
-  removeDuplicateTransactionIDs();
+  // === Step 13: Remove Duplicate Payment IDs ===
+  removeDuplicatePaymentIDs();
+  
+  Logger.log(`Processing complete! Processed ${processedData.length} new transactions from Raw to Processed.`);
 }
 
 /**
- * Removes duplicate rows in the "Processed Transactions" sheet based on "Transaction ID" (column A).
+ * Removes duplicate rows in the "Processed" sheet based on "PaymentID" (column A).
  */
-function removeDuplicateTransactionIDs() {
+function removeDuplicatePaymentIDs() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const processedSheet = ss.getSheetByName('Processed Transactions');
-  if (!processedSheet) throw new Error(`Sheet named 'Processed Transactions' not found.`);
+  const processedSheet = ss.getSheetByName('Processed');
+  if (!processedSheet) throw new Error(`Sheet named 'Processed' not found.`);
   
   const lastRow = processedSheet.getLastRow();
   if (lastRow < 2) {
-    Logger.log(`No data to process in 'Processed Transactions' sheet.`);
+    Logger.log(`No data to process in 'Processed' sheet.`);
     return;
   }
   
   const dataRange = processedSheet.getRange(2, 1, lastRow - 1, processedSheet.getLastColumn());
   const data = dataRange.getValues();
-  const seenTransactionIDs = new Set();
+  const seenPaymentIDs = new Set();
   const rowsToDelete = [];
   
   // Iterate from bottom up so we delete duplicates after the first occurrence
   for (let i = data.length - 1; i >= 0; i--) {
-    const transactionID = data[i][0]; // Column A
-    if (transactionID) {
-      const trimmedTransactionID = transactionID.toString().trim();
-      if (seenTransactionIDs.has(trimmedTransactionID)) {
+    const paymentID = data[i][0]; // Column A
+    if (paymentID) {
+      const trimmedPaymentID = paymentID.toString().trim();
+      if (seenPaymentIDs.has(trimmedPaymentID)) {
         rowsToDelete.push(i + 2); 
       } else {
-        seenTransactionIDs.add(trimmedTransactionID);
+        seenPaymentIDs.add(trimmedPaymentID);
       }
     }
   }
@@ -367,44 +386,44 @@ function removeDuplicateTransactionIDs() {
     for (let i = rowsToDelete.length - 1; i >= 0; i--) {
       processedSheet.deleteRow(rowsToDelete[i]);
     }
-    Logger.log(`Removed ${rowsToDelete.length} duplicate row(s) based on "Transaction ID".`);
+    Logger.log(`Removed ${rowsToDelete.length} duplicate row(s) based on "PaymentID".`);
   } else {
-    Logger.log(`No duplicate "Transaction ID" entries found.`);
+    Logger.log(`No duplicate "PaymentID" entries found.`);
   }
 }
 
 /**
- * Applies formatting to the "Processed Transactions" sheet (background colors, bold headers, auto-resize, etc.).
+ * Applies formatting to the "Processed" sheet (background colors, bold headers, auto-resize, etc.).
  * @param {Sheet} sheet 
  * @param {number} headerLength 
  */
-function applyBusinessFormatting(sheet, headerLength) {
+function applyFormatting(sheet, headerLength) {
   const lastRow = sheet.getLastRow();
   
-  // Background colors for processing fee columns G(7) & H(8): light blue
-  const processingFeeColumns = [7, 8];
-  processingFeeColumns.forEach(function(col){
+  // Background colors for columns G(7) & H(8): light blue
+  const columnsGH = [7, 8];
+  columnsGH.forEach(function(col){
     const range = sheet.getRange(1, col, lastRow);
     range.setBackground('#D9E1F2'); // Light blue
   });
 
-  // Service-related columns I(9), J(10), K(11), L(12): light green
-  const serviceColumns = [9, 10, 11, 12];
-  serviceColumns.forEach(function(col){
+  // Columns I(9), J(10), K(11), L(12): light green
+  const columnsIJKL = [9, 10, 11, 12];
+  columnsIJKL.forEach(function(col){
     const range = sheet.getRange(1, col, lastRow);
     range.setBackground('#E2EFDA'); // Light green
   });
 
-  // Product-related columns M(13), N(14), O(15), P(16), Q(17): light yellow
-  const productColumns = [13, 14, 15, 16, 17];
-  productColumns.forEach(function(col){
+  // Columns M(13), N(14), O(15), P(16), Q(17): light yellow
+  const columnsMNOPQ = [13, 14, 15, 16, 17];
+  columnsMNOPQ.forEach(function(col){
     const range = sheet.getRange(1, col, lastRow);
     range.setBackground('#FFF2CC'); // Light yellow
   });
 
-  // Adjustment columns R(18) and S(19): light pink
-  const adjustmentColumns = [18, 19];
-  adjustmentColumns.forEach(function(col){
+  // Columns R(18) and S(19): light pink
+  const columnsRS = [18, 19];
+  columnsRS.forEach(function(col){
     const range = sheet.getRange(1, col, lastRow);
     range.setBackground('#FCE4EC'); // Light pink
   });
@@ -432,16 +451,16 @@ function applyBusinessFormatting(sheet, headerLength) {
     });
   }
 
-  Logger.log('Reapplied formatting to the "Processed Transactions" sheet.');
+  Logger.log('Reapplied formatting to the "Processed" sheet.');
 }
 
 /**
- * Parses the service description field from raw data to extract staff name, service type, product info, etc.
- * @param {string} serviceDescription - The concatenated service description string from raw data
+ * Parses the "Name" field from Raw to extract staff name, service type, product info, etc.
+ * @param {string} name - The concatenated name string from raw data
  * @param {number|string} quantityRaw - The raw quantity field
  * @returns {object} { staffName, serviceType, products[], additionalFees, nonProductCount }
  */
-function parseServiceDescription(serviceDescription, quantityRaw) {
+function parseNameField(name, quantityRaw) {
   let staffName = '';
   let serviceType = '';
   let products = [];
@@ -454,7 +473,7 @@ function parseServiceDescription(serviceDescription, quantityRaw) {
   }
 
   // Split by commas
-  const parts = serviceDescription.split(',').map(part => part.trim());
+  const parts = name.split(',').map(part => part.trim());
   
   parts.forEach(part => {
     // Regex to match 'Service Type w/ Staff Name'
