@@ -1,5 +1,12 @@
 # Service Business Payment Processing System
 
+![Google Apps Script](https://img.shields.io/badge/Google%20Apps%20Script-4285F4?style=for-the-badge&logo=google&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
+![Google Sheets](https://img.shields.io/badge/Google%20Sheets-34A853?style=for-the-badge&logo=google-sheets&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.0-green?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
+
 ## Overview
 
 This Google Apps Script automates the complex process of transforming raw payment data into detailed financial reports for a service-based business. The system handles commission calculations, tip distribution, product sales tracking, and generates comprehensive reports for both staff compensation and business analytics.
